@@ -1,0 +1,49 @@
+{
+  "zones": [
+    {
+      "id": "48201392",
+      "name": "Zone (106, 173)",
+      "x": 106,
+      "y": 173,
+      "use_image_detection": false,
+      "template_path": null,
+      "enabled": true
+    },
+    {
+      "id": "c18fd6df",
+      "name": "Zone (157, 230)",
+      "x": 157,
+      "y": 230,
+      "use_image_detection": false,
+      "template_path": null,
+      "enabled": true
+    },
+    {
+      "id": "27577ad4",
+      "name": "Zone (168, 224)",
+      "x": 168,
+      "y": 224,
+      "use_image_detection": false,
+      "template_path": null,
+      "enabled": true
+    },
+    {
+      "id": "255c978c",
+      "name": "Zone (196, 275)",
+      "x": 196,
+      "y": 275,
+      "use_image_detection": false,
+      "template_path": null,
+      "enabled": true
+    },
+    {
+      "id": "7d203b69",
+      "name": "Zone (106, 126)",
+      "x": 106,
+      "y": 126,
+      "use_image_detection": false,
+      "template_path": null,
+      "enabled": true
+    }
+  ]
+}
