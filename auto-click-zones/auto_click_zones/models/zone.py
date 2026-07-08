@@ -32,6 +32,7 @@ class Zone:
     scroll_to_extent: bool = False  # if True, keep scrolling until the page stops moving
     key_sequence: str = ""  # hotkey combo, e.g. "ctrl+c" or "ctrl+shift+v"
     text_to_type: str = ""  # literal text/numbers to type
+    note: str = ""  # free-text note for your own reference; never used by the click engine
     id: str = field(default="")
 
     def to_dict(self) -> dict:
@@ -50,6 +51,7 @@ class Zone:
             "scroll_to_extent": self.scroll_to_extent,
             "key_sequence": self.key_sequence,
             "text_to_type": self.text_to_type,
+            "note": self.note,
         }
 
     @classmethod
@@ -69,6 +71,7 @@ class Zone:
             scroll_to_extent=data.get("scroll_to_extent", False),
             key_sequence=data.get("key_sequence", ""),
             text_to_type=str(data.get("text_to_type", "")),
+            note=data.get("note", ""),
         )
 
     def display_text(self) -> str:

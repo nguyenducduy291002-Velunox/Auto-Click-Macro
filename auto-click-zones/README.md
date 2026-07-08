@@ -14,6 +14,8 @@ Detect click zones on your screen and auto-click each zone **once per cycle**.
 - **Per-zone delays** — set a different wait time after each individual zone (e.g. wait 1s after zone 1, then 5s after zone 2), instead of one delay applied uniformly everywhere. A zone with no delay set falls back to the global default delay
 - **Scroll zones** — instead of clicking, a zone can scroll up or down by a set amount. Combine with image detection to capture a scrollbar visually, so the app finds it live each cycle and scrolls there
 - **Keyboard steps** — press hotkey combos like `ctrl+c`, `ctrl+v`, `ctrl+shift+v`, `enter`, or `tab`, or type literal text/numbers as part of the same macro cycle
+- **Suspend Start** — a toggle that disables the Start button *and* the Start hotkey until you resume it, so the macro can't be triggered by accident. Stop always keeps working regardless.
+- **Mid-macro editing** — reorder zones with Move Up/Move Down, insert new zones anywhere (each "Add" action inserts right after whichever zone is selected, instead of always appending at the end), and attach a free-text note to any zone purely for your own reference (never read by the click engine)
 
 ## Project Structure
 
@@ -71,6 +73,17 @@ In **Settings**, edit **Start hotkey** and **Stop hotkey**, then click
 **Apply Hotkeys**. The app saves these choices in `data/settings.json`.
 
 Examples: `f6`, `f9`, `ctrl+f6`, `alt+s`, `ctrl+shift+s`.
+
+## Suspending the Start button
+
+Click **Suspend Start** to disable the Start button and the Start hotkey until you resume it — useful if you want to prevent an accidental trigger while you're editing zones. The button relabels to **Resume Start**; click it again to restore normal behavior. **Stop** (button and hotkey) is never affected, so a running macro can always be stopped.
+
+## Editing zones in the middle of the macro
+
+- **Reorder**: select a zone and click **Move Up** / **Move Down** to shift it earlier or later in the execution order.
+- **Insert in the middle**: select the zone you want the new one to come *after*, then use any of the Add buttons (Pick Position, Use Current Mouse Position, Detect by Image Region, Add Manual, Add Hotkey, Add Text/Number) - the new zone is inserted right after your selection instead of being appended at the end. With nothing selected, new zones are still appended at the end as before.
+- **Delete**: select a zone and click **Remove Selected**, same as always.
+- **Notes**: select a zone, type anything into **"Note for selected zone"**, and click **Set Note**. This is shown in the zone list for your own reference and is never read by the click engine - it has zero effect on what the macro actually does.
 
 ## Targeting a specific application
 

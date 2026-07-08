@@ -49,8 +49,15 @@ def add_zone(
     use_image_detection: bool = False,
     template_path: Optional[str] = None,
     delay_after: Optional[float] = None,
+    after_zone_id: Optional[str] = None,
 ) -> Zone:
-    """Add a new zone and return it."""
+    """
+    Add a new zone and return it.
+
+    If after_zone_id is given and found, the new zone is inserted right
+    after it in the list (so you can build a zone in the middle of an
+    existing macro). Otherwise it's appended at the end, as before.
+    """
     zone = Zone(
         id=str(uuid.uuid4())[:8],
         name=name,
@@ -60,8 +67,42 @@ def add_zone(
         template_path=template_path,
         delay_after=delay_after,
     )
-    zones.append(zone)
+    insert_zone(zones, zone, after_zone_id)
     return zone
+
+
+def insert_zone(zones: List[Zone], zone: Zone, after_zone_id: Optional[str] = None) -> None:
+    """Insert `zone` right after after_zone_id, or append at the end if None/not found."""
+    if after_zone_id is not None:
+        for index, existing in enumerate(zones):
+            if existing.id == after_zone_id:
+                zones.insert(index + 1, zone)
+                return
+    zones.append(zone)
+
+
+def move_zone(zones: List[Zone], zone_id: str, delta: int) -> bool:
+    """
+    Move a zone earlier (delta=-1) or later (delta=+1) in the execution
+    order. Returns True if it moved, False if it was already at that end.
+    """
+    index = next((i for i, z in enumerate(zones) if z.id == zone_id), None)
+    if index is None:
+        return False
+    new_index = index + delta
+    if new_index < 0 or new_index >= len(zones):
+        return False
+    zones[index], zones[new_index] = zones[new_index], zones[index]
+    return True
+
+
+def set_zone_note(zones: List[Zone], zone_id: str, note: str) -> bool:
+    """Set a zone's free-text note. Purely for reference - never used by the click engine."""
+    zone = get_zone_by_id(zones, zone_id)
+    if zone is None:
+        return False
+    zone.note = note
+    return True
 
 
 def set_zone_delay(zones: List[Zone], zone_id: str, delay_after: Optional[float]) -> bool:

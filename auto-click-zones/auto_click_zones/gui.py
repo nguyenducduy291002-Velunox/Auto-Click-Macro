@@ -36,10 +36,12 @@ from auto_click_zones.zone_detector import (
 from auto_click_zones.zone_manager import (
     add_zone,
     load_zones,
+    move_zone,
     remove_zone,
     save_zones,
     set_zone_action,
     set_zone_delay,
+    set_zone_note,
     toggle_zone_enabled,
 )
 
@@ -55,7 +57,9 @@ class MainWindow:
 
         self.zones: List[Zone] = load_zones()
         self._selected_zone_id: Optional[str] = None
+        self._listbox_line_zone_index: List[int] = []
         self.settings: AppSettings = load_settings()
+        self._start_suspended: bool = False
 
         self.clicker = AutoClicker(
             on_status=self._set_status,
@@ -168,6 +172,12 @@ class MainWindow:
         ttk.Button(action_frame, text="Remove Selected", command=self._remove_selected).pack(
             side=tk.LEFT, padx=4
         )
+        ttk.Button(action_frame, text="Move Up", command=lambda: self._move_selected(-1)).pack(
+            side=tk.LEFT, padx=4
+        )
+        ttk.Button(action_frame, text="Move Down", command=lambda: self._move_selected(1)).pack(
+            side=tk.LEFT, padx=4
+        )
         ttk.Button(action_frame, text="Toggle Enable", command=self._toggle_selected).pack(
             side=tk.LEFT, padx=4
         )
@@ -254,6 +264,21 @@ class MainWindow:
             foreground="#666666",
         ).pack(side=tk.LEFT)
 
+        # --- Note (reference only - never read by the click engine) ---
+        zone_note_frame = ttk.Frame(main)
+        zone_note_frame.pack(fill=tk.X, pady=(0, 8))
+
+        ttk.Label(zone_note_frame, text="Note for selected zone (for your reference only):").pack(
+            side=tk.LEFT
+        )
+        self.zone_note_var = tk.StringVar(value="")
+        ttk.Entry(zone_note_frame, textvariable=self.zone_note_var, width=40).pack(
+            side=tk.LEFT, padx=8
+        )
+        ttk.Button(zone_note_frame, text="Set Note", command=self._set_selected_zone_note).pack(
+            side=tk.LEFT, padx=4
+        )
+
         # --- Settings ---
         settings_frame = ttk.LabelFrame(main, text="Settings", padding=8)
         settings_frame.pack(fill=tk.X, pady=(0, 8))
@@ -319,9 +344,20 @@ class MainWindow:
         )
         self.stop_btn.pack(side=tk.LEFT, padx=4)
 
+        self.suspend_start_btn = ttk.Button(
+            control_frame, text="Suspend Start", command=self._toggle_suspend_start
+        )
+        self.suspend_start_btn.pack(side=tk.LEFT, padx=(16, 4))
+
+        self.suspend_status_var = tk.StringVar(value="")
+        ttk.Label(control_frame, textvariable=self.suspend_status_var, foreground="#a02020").pack(
+            side=tk.LEFT, padx=8
+        )
+
         self.hotkey_status_var = tk.StringVar(value="")
         ttk.Label(control_frame, textvariable=self.hotkey_status_var).pack(side=tk.LEFT, padx=16)
         self._refresh_hotkey_labels()
+        self._update_start_button_state()
 
         # --- Status bar ---
         self.status_var = tk.StringVar(value="Ready. Add zones and press Start.")
@@ -370,43 +406,62 @@ class MainWindow:
         self._set_status(f"Hotkeys updated: Start={start}, Stop={stop}")
 
     def _refresh_zone_list(self) -> None:
-        """Refresh the listbox from self.zones, preserving the current selection."""
-        self.zone_listbox.delete(0, tk.END)
-        for zone in self.zones:
-            self.zone_listbox.insert(tk.END, zone.display_text())
+        """
+        Refresh the listbox from self.zones, preserving the current selection.
 
-        if self._selected_zone_id is not None:
-            for index, zone in enumerate(self.zones):
-                if zone.id == self._selected_zone_id:
-                    self.zone_listbox.selection_set(index)
-                    self.zone_listbox.see(index)
-                    break
+        Each zone gets its own line; if it has a note, an extra note-only
+        line is inserted right after it (visually "between" that zone and
+        the next one). Note lines aren't separate zones - clicking one just
+        selects the zone above it - so we keep a per-line -> zone-index map.
+        """
+        self.zone_listbox.delete(0, tk.END)
+        self._listbox_line_zone_index: List[int] = []
+
+        selected_line = None
+        for zone_index, zone in enumerate(self.zones):
+            self.zone_listbox.insert(tk.END, zone.display_text())
+            self._listbox_line_zone_index.append(zone_index)
+            if zone.id == self._selected_zone_id:
+                selected_line = len(self._listbox_line_zone_index) - 1
+
+            if zone.note:
+                line_index = self.zone_listbox.size()
+                self.zone_listbox.insert(tk.END, f"      \u21b3 note: {zone.note}")
+                self.zone_listbox.itemconfig(line_index, foreground="#666666")
+                self._listbox_line_zone_index.append(zone_index)
+
+        if selected_line is not None:
+            self.zone_listbox.selection_set(selected_line)
+            self.zone_listbox.see(selected_line)
 
     def _on_list_select(self, _event=None) -> None:
         selection = self.zone_listbox.curselection()
         if selection:
-            index = selection[0]
-            if 0 <= index < len(self.zones):
-                zone = self.zones[index]
-                self._selected_zone_id = zone.id
-                self.zone_delay_var.set(
-                    "" if zone.delay_after is None else str(zone.delay_after)
-                )
-                if zone.action == ACTION_SCROLL:
-                    self.zone_action_var.set("Scroll Up" if zone.scroll_amount >= 0 else "Scroll Down")
-                    self.scroll_amount_var.set(max(1, abs(zone.scroll_amount)))
-                    self.scroll_to_extent_var.set(zone.scroll_to_extent)
-                elif zone.action == ACTION_HOTKEY:
-                    self.zone_action_var.set("Hotkey")
-                    self.scroll_to_extent_var.set(False)
-                elif zone.action == ACTION_TYPE_TEXT:
-                    self.zone_action_var.set("Type Text / Number")
-                    self.scroll_to_extent_var.set(False)
-                else:
-                    self.zone_action_var.set("Click")
-                    self.scroll_to_extent_var.set(False)
-                self.key_sequence_var.set(zone.key_sequence)
-                self.text_to_type_var.set(zone.text_to_type)
+            line_index = selection[0]
+            if 0 <= line_index < len(self._listbox_line_zone_index):
+                zone_index = self._listbox_line_zone_index[line_index]
+                if 0 <= zone_index < len(self.zones):
+                    zone = self.zones[zone_index]
+                    self._selected_zone_id = zone.id
+                    self.zone_delay_var.set(
+                        "" if zone.delay_after is None else str(zone.delay_after)
+                    )
+                    if zone.action == ACTION_SCROLL:
+                        self.zone_action_var.set("Scroll Up" if zone.scroll_amount >= 0 else "Scroll Down")
+                        self.scroll_amount_var.set(max(1, abs(zone.scroll_amount)))
+                        self.scroll_to_extent_var.set(zone.scroll_to_extent)
+                    elif zone.action == ACTION_HOTKEY:
+                        self.zone_action_var.set("Hotkey")
+                        self.scroll_to_extent_var.set(False)
+                    elif zone.action == ACTION_TYPE_TEXT:
+                        self.zone_action_var.set("Type Text / Number")
+                        self.scroll_to_extent_var.set(False)
+                    else:
+                        self.zone_action_var.set("Click")
+                        self.scroll_to_extent_var.set(False)
+                    self.key_sequence_var.set(zone.key_sequence)
+                    self.text_to_type_var.set(zone.text_to_type)
+                    self.zone_note_var.set(zone.note)
 
     def _get_selected_zone(self) -> Optional[Zone]:
         if self._selected_zone_id is None:
@@ -431,8 +486,9 @@ class MainWindow:
         name = self._ask_zone_name(f"Zone ({x}, {y})")
         if name is None:
             return
-        add_zone(self.zones, name=name, x=x, y=y)
+        zone = add_zone(self.zones, name=name, x=x, y=y, after_zone_id=self._selected_zone_id)
         self.clicker.set_zones(self.zones)
+        self._selected_zone_id = zone.id
         self._refresh_zone_list()
         self._set_status(f"Added zone '{name}' at ({x}, {y})")
 
@@ -445,8 +501,9 @@ class MainWindow:
         name = self._ask_zone_name(f"Zone ({x}, {y})")
         if name is None:
             return
-        add_zone(self.zones, name=name, x=x, y=y)
+        zone = add_zone(self.zones, name=name, x=x, y=y, after_zone_id=self._selected_zone_id)
         self.clicker.set_zones(self.zones)
+        self._selected_zone_id = zone.id
         self._refresh_zone_list()
         self._set_status(f"Added zone '{name}' at ({x}, {y})")
 
@@ -465,15 +522,17 @@ class MainWindow:
             messagebox.showerror("Error", "Failed to capture template image.")
             return
 
-        add_zone(
+        zone = add_zone(
             self.zones,
             name=name,
             x=x + width // 2,
             y=y + height // 2,
             use_image_detection=True,
             template_path=str(template_path),
+            after_zone_id=self._selected_zone_id,
         )
         self.clicker.set_zones(self.zones)
+        self._selected_zone_id = zone.id
         self._refresh_zone_list()
         self._set_status(f"Added image zone '{name}' with template {template_path.name}")
 
@@ -491,8 +550,9 @@ class MainWindow:
         name = self._ask_zone_name(f"Zone ({x}, {y})")
         if name is None:
             return
-        add_zone(self.zones, name=name, x=x, y=y)
+        zone = add_zone(self.zones, name=name, x=x, y=y, after_zone_id=self._selected_zone_id)
         self.clicker.set_zones(self.zones)
+        self._selected_zone_id = zone.id
         self._refresh_zone_list()
 
     def _add_hotkey_step(self) -> None:
@@ -502,7 +562,7 @@ class MainWindow:
         name = self._ask_zone_name(f"Hotkey {sequence.strip()}")
         if name is None:
             return
-        zone = add_zone(self.zones, name=name, x=0, y=0)
+        zone = add_zone(self.zones, name=name, x=0, y=0, after_zone_id=self._selected_zone_id)
         set_zone_action(self.zones, zone.id, ACTION_HOTKEY, key_sequence=sequence.strip())
         self.clicker.set_zones(self.zones)
         self._selected_zone_id = zone.id
@@ -516,7 +576,7 @@ class MainWindow:
         name = self._ask_zone_name(f"Type {text}")
         if name is None:
             return
-        zone = add_zone(self.zones, name=name, x=0, y=0)
+        zone = add_zone(self.zones, name=name, x=0, y=0, after_zone_id=self._selected_zone_id)
         set_zone_action(self.zones, zone.id, ACTION_TYPE_TEXT, text_to_type=text)
         self.clicker.set_zones(self.zones)
         self._selected_zone_id = zone.id
@@ -528,8 +588,13 @@ class MainWindow:
         if zone is None:
             messagebox.showinfo("Info", "Select a zone first.")
             return
+        index = next((i for i, z in enumerate(self.zones) if z.id == zone.id), None)
         remove_zone(self.zones, zone.id)
-        self._selected_zone_id = None
+        if index is not None and self.zones:
+            new_index = min(index, len(self.zones) - 1)
+            self._selected_zone_id = self.zones[new_index].id
+        else:
+            self._selected_zone_id = None
         self.clicker.set_zones(self.zones)
         self._refresh_zone_list()
 
@@ -541,6 +606,29 @@ class MainWindow:
         toggle_zone_enabled(self.zones, zone.id)
         self.clicker.set_zones(self.zones)
         self._refresh_zone_list()
+
+    def _move_selected(self, delta: int) -> None:
+        """Move the selected zone earlier (-1) or later (+1) in the macro's execution order."""
+        zone = self._get_selected_zone()
+        if zone is None:
+            messagebox.showinfo("Info", "Select a zone first.")
+            return
+        if move_zone(self.zones, zone.id, delta):
+            self.clicker.set_zones(self.zones)
+            self._refresh_zone_list()
+            self._set_status(f"Moved '{zone.name}' {'up' if delta < 0 else 'down'}.")
+        else:
+            self._set_status(f"'{zone.name}' is already at that end of the list.")
+
+    def _set_selected_zone_note(self) -> None:
+        zone = self._get_selected_zone()
+        if zone is None:
+            messagebox.showinfo("Info", "Select a zone first.")
+            return
+        note = self.zone_note_var.get()
+        set_zone_note(self.zones, zone.id, note)
+        self._refresh_zone_list()
+        self._set_status(f"Note {'set' if note else 'cleared'} for '{zone.name}'.")
 
     def _test_click(self) -> None:
         zone = self._get_selected_zone()
@@ -670,6 +758,10 @@ class MainWindow:
         self._set_status("Zones saved.")
 
     def _start(self) -> None:
+        if self._start_suspended:
+            self._set_status("Start is suspended. Click 'Resume Start' to enable it again.")
+            return
+
         self.clicker.set_zones(self.zones)
         self.clicker.set_delays(self.click_delay_var.get(), self.cycle_delay_var.get())
         self.clicker.set_repeat_cycles(self.repeat_var.get())
@@ -680,15 +772,35 @@ class MainWindow:
         )
 
         if self.clicker.start():
-            self.start_btn.config(state=tk.DISABLED)
             self.stop_btn.config(state=tk.NORMAL)
+            self._update_start_button_state()
         else:
             messagebox.showwarning("Warning", "Could not start. Add at least one enabled zone.")
 
     def _stop(self) -> None:
         self.clicker.stop()
-        self.start_btn.config(state=tk.NORMAL)
         self.stop_btn.config(state=tk.DISABLED)
+        self._update_start_button_state()
+
+    def _update_start_button_state(self) -> None:
+        """Apply running + suspended state to the Start button (and only the Start button - Stop always works)."""
+        if self.clicker.is_running or self._start_suspended:
+            self.start_btn.config(state=tk.DISABLED)
+        else:
+            self.start_btn.config(state=tk.NORMAL)
+
+    def _toggle_suspend_start(self) -> None:
+        """Suspend or resume the Start button and Start hotkey. Stop is never affected."""
+        self._start_suspended = not self._start_suspended
+        if self._start_suspended:
+            self.suspend_start_btn.config(text="Resume Start")
+            self.suspend_status_var.set("Start is SUSPENDED (button and hotkey disabled)")
+            self._set_status("Start suspended - the Start button and hotkey will not work until resumed.")
+        else:
+            self.suspend_start_btn.config(text="Suspend Start")
+            self.suspend_status_var.set("")
+            self._set_status("Start resumed.")
+        self._update_start_button_state()
 
     def _on_cycle_done(self, count: int) -> None:
         repeat = self.repeat_var.get()
